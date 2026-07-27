@@ -1,0 +1,33 @@
+# Environment and Secrets
+.env
+*.env
+*.pem
+*.key
+
+# Datasets and Data files
+data/
+dataset/
+*.csv
+*.pdf
+*.xlsx
+*.parquet
+
+# Vector Database and Storage
+chroma_db/
+*.sqlite3
+*.db
+
+# Python Caches & Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# IDE & OS files
+.DS_Store
+.vscode/
+.idea/
+*.swp

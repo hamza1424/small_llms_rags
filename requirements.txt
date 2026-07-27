@@ -1,0 +1,10 @@
+chromadb
+sentence-transformers
+pypdf
+langchain
+langchain-community
+streamlit
+pyyaml
+requests
+pandas
+bert-score>=0.3.13
