@@ -1,16 +1,19 @@
 # RAG Configuration
 knowledge_base:
   folder: "dataset"
+  chunking_strategy: "paragraph"
   chunk_size: 500
   chunk_overlap: 50
+  min_paragraph_size: 200
+  max_paragraph_size: 1000
 
 retrieval:
   top_k: 3
-  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  embedding_model: "sentence-transformers/all-mpnet-base-v2"
 
 vector_store:
   path: "./chroma_db"
-  collection_name: "medical_knowledge_minilmv2"
+  collection_name: "medical_knowledge_mpnet"
 
 ollama:
   base_url: "http://localhost:11434"

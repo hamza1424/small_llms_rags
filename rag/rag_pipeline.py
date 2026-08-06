@@ -46,19 +46,25 @@ class MedicalRAGPipeline:
         # Ollama settings
         self.ollama_base_url = self.config['ollama']['base_url']
 
-    def ingest_documents(self) -> int:
+    def ingest_documents(self, strategy: str | None = None) -> int:
         """
         Scan knowledge base folder, load PDFs, split them, and add to vector store.
         """
         kb_folder = self.config['knowledge_base']['folder']
         chunk_size = self.config['knowledge_base']['chunk_size']
         chunk_overlap = self.config['knowledge_base']['chunk_overlap']
+        chunk_strategy = strategy or self.config['knowledge_base'].get('chunking_strategy', 'paragraph')
+        min_p_size = self.config['knowledge_base'].get('min_paragraph_size', 200)
+        max_p_size = self.config['knowledge_base'].get('max_paragraph_size', 1000)
         
-        print(f"Starting ingestion from folder: {kb_folder}")
+        print(f"Starting ingestion from folder: {kb_folder} (Strategy: {chunk_strategy})")
         chunks = load_and_chunk_pdfs(
             pdf_folder=kb_folder,
             chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap
+            chunk_overlap=chunk_overlap,
+            strategy=chunk_strategy,
+            min_paragraph_size=min_p_size,
+            max_paragraph_size=max_p_size,
         )
         
         if not chunks:
@@ -104,30 +110,34 @@ class MedicalRAGPipeline:
         contexts = [item['text'] for item in retrieved_chunks]
         context_str = "\n\n".join(contexts)
         
-        prompt = f"""You are a clinical expert. Use the following medical information to answer the question accurately.
-If the context does not contain enough information, say so clearly. Be direct and answer in 6 sentences or less.
+        prompt = f"""
+        You are a medical expert with the task of answering medical questions. 
+        Given the following context, answer the question.
+        Don't mention in your answer that you're using the context.
+        Keep the ansswer in terms of guidance for users to understand in simple plain language. 
 
-Context:
-{context_str}
+        Context:
+        {context_str}
 
-Question: {question}
+        Question:
+        {question}
 
-Answer:"""
+        Answer:
+        """
         return prompt
+
+    SHARED_SYSTEM_INSTRUCTION = (
+        "You are a clinical expert. Answer in ≤6 sentences. Be direct.\n"
+        "If uncertain, say so. Never recommend unsafe actions."
+    )
 
     def build_plain_prompt(self, question: str) -> str:
         """
-        Build a plain prompt matching the same instruction system but without context.
+        Build a plain question string matching the reference repository prompt structure.
         """
-        prompt = f"""You are a clinical expert. Answer the following medical question directly.
-Answer in 6 sentences or less. If uncertain, say so. Never recommend unsafe actions.
+        return question.strip()
 
-Question: {question}
-
-Answer:"""
-        return prompt
-
-    def query_ollama(self, prompt: str, model: str, temperature: float = 0.2) -> str:
+    def query_ollama(self, prompt: str, model: str, temperature: float = 0.2, system: str | None = None) -> str:
         """
         Send a generation request to the local Ollama instance.
         """
@@ -140,6 +150,8 @@ Answer:"""
                 "temperature": temperature
             }
         }
+        if system:
+            payload["system"] = system
         
         try:
             response = requests.post(url, json=payload, timeout=120)
@@ -165,7 +177,7 @@ Answer:"""
 
     def run_plain_query(self, question: str, model: str, temperature: float = 0.2) -> str:
         """
-        Execute a plain query without retrieval context.
+        Execute a plain zero-shot query matching the reference reproducibility repository system instruction.
         """
         prompt = self.build_plain_prompt(question)
-        return self.query_ollama(prompt, model, temperature)
+        return self.query_ollama(prompt, model, temperature, system=self.SHARED_SYSTEM_INSTRUCTION)

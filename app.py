@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 from rag.rag_pipeline import MedicalRAGPipeline
 from rag.gold_loader import load_gold_dataset, filter_by_focus_area
 from rag.bert_scorer import compute_bertscore
+from rag.benchmark import run_rag_benchmark_50, get_baseline_scores, load_benchmark_questions
 
 # Set page configuration with medical theme emojis
 st.set_page_config(
@@ -196,13 +197,21 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"CSV Ingestion failed: {e}")
     else:
+        chunking_strategy = st.selectbox(
+            "PDF Chunking Strategy",
+            options=["Paragraph-Based (Adaptive)", "Recursive Character Splitter"],
+            index=0,
+            key="sb_chunk_strategy",
+            help="Paragraph-Based groups by natural paragraphs; Recursive character splits strictly by character count."
+        )
         if st.button("🔄 Re-index PDF Documents", use_container_width=True, key="btn_ingest_pdf"):
             with st.spinner("Scanning directory, splitting PDFs, embedding chunks..."):
                 try:
                     start_time = time.time()
-                    added = pipeline.ingest_documents()
+                    strat_code = "paragraph" if "Paragraph" in chunking_strategy else "recursive"
+                    added = pipeline.ingest_documents(strategy=strat_code)
                     duration = time.time() - start_time
-                    st.success(f"Indexed {added} PDF chunks in {duration:.2f} seconds!")
+                    st.success(f"Indexed {added} PDF chunks using '{strat_code}' strategy in {duration:.2f} seconds!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"PDF Ingestion failed: {e}")
@@ -222,9 +231,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Setup tabs
-tab_query, tab_gold_eval, tab_consistency, tab_explorer = st.tabs([
+tab_query, tab_gold_eval, tab_benchmark, tab_consistency, tab_explorer = st.tabs([
     "💬 Side-by-Side Playground",
     "📊 Gold Dataset Evaluation",
+    "🏆 Benchmark Evaluation (50 Qs)",
     "📈 Consistency & Reproducibility Evaluator",
     "🔍 Knowledge Base Explorer"
 ])
@@ -506,6 +516,223 @@ with tab_gold_eval:
                         expanded=(idx == 0),
                     ):
                         st.write(chunk["text"])
+
+# --- TAB 3: 🏆 Benchmark Evaluation (50 Qs) ---
+with tab_benchmark:
+    st.subheader("🏆 Medical RAG 50-Question Benchmark Evaluation")
+    st.write(
+        "Evaluate our **Medical RAG System** against the 50 reference clinical questions from the "
+        "`llm_medical_reproducibility-1.0.0` benchmark. Compare our similarity scores directly against "
+        "the reference zero-shot LLM baselines (`llama3.1:8b`, `gemma3:12b`, `medaibase/medgemma1.5:4b`)."
+    )
+
+    # Reference Baselines Display Card
+    st.markdown("### 📊 Reference Baseline Scores (Zero-Shot Without RAG)")
+    baselines = get_baseline_scores()
+    
+    b_col1, b_col2, b_col3 = st.columns(3)
+    with b_col1:
+        st.markdown("**llama3.1:8b Baseline**")
+        st.markdown(f"- **BERTScore F1:** `{baselines['llama3.1:8b']['bertscore_f1_avg']:.4f}`")
+        st.markdown(f"- **Token F1:** `{baselines['llama3.1:8b']['token_f1_avg']:.4f}`")
+        st.markdown(f"- **String Similarity:** `{baselines['llama3.1:8b']['string_similarity_avg']:.4f}`")
+        st.markdown(f"- **ROUGE-L F1:** `{baselines['llama3.1:8b']['rouge_l_avg']:.4f}`")
+
+    with b_col2:
+        st.markdown("**medgemma1.5:4b Baseline**")
+        st.markdown(f"- **BERTScore F1:** `{baselines['medaibase/medgemma1.5:4b']['bertscore_f1_avg']:.4f}`")
+        st.markdown(f"- **Token F1:** `{baselines['medaibase/medgemma1.5:4b']['token_f1_avg']:.4f}`")
+        st.markdown(f"- **String Similarity:** `{baselines['medaibase/medgemma1.5:4b']['string_similarity_avg']:.4f}`")
+        st.markdown(f"- **ROUGE-L F1:** `{baselines['medaibase/medgemma1.5:4b']['rouge_l_avg']:.4f}`")
+
+    with b_col3:
+        st.markdown("**gemma3:12b Baseline**")
+        st.markdown(f"- **BERTScore F1:** `{baselines['gemma3:12b']['bertscore_f1_avg']:.4f}`")
+        st.markdown(f"- **Token F1:** `{baselines['gemma3:12b']['token_f1_avg']:.4f}`")
+        st.markdown(f"- **String Similarity:** `{baselines['gemma3:12b']['string_similarity_avg']:.4f}`")
+        st.markdown(f"- **ROUGE-L F1:** `{baselines['gemma3:12b']['rouge_l_avg']:.4f}`")
+
+    st.markdown("---")
+    st.markdown("### 🎯 Benchmark Configuration & Focus Area Sampling")
+    
+    try:
+        gold_df_bench = get_gold_dataset(pipeline.config)
+        avail_categories = sorted([c for c in gold_df_bench["category"].dropna().unique().tolist() if c and str(c).strip() and str(c).lower() != "nan"])
+    except Exception:
+        avail_categories = ["Breast Cancer", "Prostate Cancer", "Stroke", "Diabetes", "Glaucoma", "High Blood Pressure"]
+
+    focus_options = ["All Focus Areas"] + avail_categories
+
+    col_fa, col_num = st.columns([2, 1])
+    with col_fa:
+        selected_focus_areas = st.multiselect(
+            "Select Clinical Focus Area(s):",
+            options=focus_options,
+            default=["Breast Cancer", "Prostate Cancer", "Stroke"],
+            help="Select one or more medical categories from gold_data.csv to sample benchmark questions from."
+        )
+    with col_num:
+        num_benchmark_questions = st.number_input(
+            "Number of Questions to Sample:",
+            min_value=1,
+            max_value=500,
+            value=50,
+            step=5,
+            help="Set how many questions to randomly sample from the selected focus areas."
+        )
+
+    # Filter calculation preview
+    if "All Focus Areas" in selected_focus_areas or not selected_focus_areas:
+        chosen_fa = None
+        matching_count = len(gold_df_bench) if 'gold_df_bench' in locals() and gold_df_bench is not None else 50
+    else:
+        chosen_fa = selected_focus_areas
+        if 'gold_df_bench' in locals() and gold_df_bench is not None:
+            clean_sel = [fa.strip().lower() for fa in selected_focus_areas]
+            matching_count = len(gold_df_bench[gold_df_bench["category"].astype(str).str.strip().str.lower().isin(clean_sel)])
+        else:
+            matching_count = 50
+
+    q_eval_count = min(int(num_benchmark_questions), matching_count)
+    st.info(f"📋 **Selection Summary:** Found **{matching_count}** matching questions. **{q_eval_count}** questions will be evaluated randomly.")
+
+    st.markdown("### 🚀 Execute RAG Benchmark Run")
+    st.caption("Runs evaluation across the sampled reference questions using the active Ollama model and vector database.")
+
+    col_btn, col_info = st.columns([1, 2])
+    with col_btn:
+        run_bench = st.button(f"🚀 Run {q_eval_count}-Question Benchmark", type="primary", key="btn_run_benchmark_50")
+
+    if run_bench:
+        progress_bar = st.progress(0.0)
+        status_box = st.empty()
+
+        def update_progress(current: int, total: int, msg: str):
+            progress_bar.progress(current / total)
+            status_box.markdown(
+                f'<div style="background-color: #e0f2fe; padding: 14px; border-radius: 8px; border-left: 5px solid #0284c7; color: #0369a1; font-size: 1.05rem;">'
+                f'⏳ <b>Active Question Processing:</b><br/>{msg}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        with st.spinner(f"Running {q_eval_count}-question benchmark evaluation..."):
+            res_df, summary = run_rag_benchmark_50(
+                pipeline=pipeline,
+                selected_model=selected_model,
+                focus_areas=chosen_fa,
+                num_questions=int(num_benchmark_questions),
+                temperature=temperature,
+                top_k=top_k,
+                progress_callback=update_progress
+            )
+            st.session_state.benchmark_results_df = res_df
+            st.session_state.benchmark_summary = summary
+            status_box.success(f"✅ {len(res_df)}-Question Benchmark Evaluation Complete!")
+
+    if "benchmark_summary" in st.session_state and "benchmark_results_df" in st.session_state:
+        res_df = st.session_state.benchmark_results_df
+        summary = st.session_state.benchmark_summary
+        llama_base = baselines["llama3.1:8b"]
+
+        delta_bert = summary["bertscore_f1_avg"] - llama_base["bertscore_f1_avg"]
+        delta_tf1 = summary["token_f1_avg"] - llama_base["token_f1_avg"]
+        delta_ssim = summary["string_similarity_avg"] - llama_base["string_similarity_avg"]
+        delta_rl = summary["rouge_l_avg"] - llama_base["rouge_l_avg"]
+
+        st.markdown("### 🎯 Benchmark Evaluation Results")
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric(
+                label="RAG BERTScore F1",
+                value=f"{summary['bertscore_f1_avg']:.4f}",
+                delta=f"{delta_bert:+.4f} vs llama3.1:8b"
+            )
+        with m2:
+            st.metric(
+                label="RAG Token F1",
+                value=f"{summary['token_f1_avg']:.4f}",
+                delta=f"{delta_tf1:+.4f} vs llama3.1:8b"
+            )
+        with m3:
+            st.metric(
+                label="RAG String Similarity",
+                value=f"{summary['string_similarity_avg']:.4f}",
+                delta=f"{delta_ssim:+.4f} vs llama3.1:8b"
+            )
+        with m4:
+            st.metric(
+                label="RAG ROUGE-L F1",
+                value=f"{summary['rouge_l_avg']:.4f}",
+                delta=f"{delta_rl:+.4f} vs llama3.1:8b"
+            )
+
+        # Detailed Comparison Table against all baseline models
+        st.markdown("#### 📈 Model-vs-Gold Quality Comparison Table")
+        comp_data = {
+            "Model / System": ["Medical RAG System (Ours)", "llama3.1:8b (Zero-Shot)", "medgemma1.5:4b (Zero-Shot)", "gemma3:12b (Zero-Shot)"],
+            "BERTScore F1": [
+                f"{summary['bertscore_f1_avg']:.4f}",
+                f"{baselines['llama3.1:8b']['bertscore_f1_avg']:.4f}",
+                f"{baselines['medaibase/medgemma1.5:4b']['bertscore_f1_avg']:.4f}",
+                f"{baselines['gemma3:12b']['bertscore_f1_avg']:.4f}"
+            ],
+            "Token F1": [
+                f"{summary['token_f1_avg']:.4f}",
+                f"{baselines['llama3.1:8b']['token_f1_avg']:.4f}",
+                f"{baselines['medaibase/medgemma1.5:4b']['token_f1_avg']:.4f}",
+                f"{baselines['gemma3:12b']['token_f1_avg']:.4f}"
+            ],
+            "String Similarity": [
+                f"{summary['string_similarity_avg']:.4f}",
+                f"{baselines['llama3.1:8b']['string_similarity_avg']:.4f}",
+                f"{baselines['medaibase/medgemma1.5:4b']['string_similarity_avg']:.4f}",
+                f"{baselines['gemma3:12b']['string_similarity_avg']:.4f}"
+            ],
+            "ROUGE-L F1": [
+                f"{summary['rouge_l_avg']:.4f}",
+                f"{baselines['llama3.1:8b']['rouge_l_avg']:.4f}",
+                f"{baselines['medaibase/medgemma1.5:4b']['rouge_l_avg']:.4f}",
+                f"{baselines['gemma3:12b']['rouge_l_avg']:.4f}"
+            ],
+            "BLEU": [
+                f"{summary['bleu_avg']:.4f}",
+                f"{baselines['llama3.1:8b']['bleu_avg']:.4f}",
+                f"{baselines['medaibase/medgemma1.5:4b']['bleu_avg']:.4f}",
+                f"{baselines['gemma3:12b']['bleu_avg']:.4f}"
+            ]
+        }
+        comp_df = pd.DataFrame(comp_data)
+        st.dataframe(comp_df, use_container_width=True, hide_index=True)
+
+        st.markdown("#### 🔍 Detailed Per-Question Results Explorer")
+        st.dataframe(
+            res_df[["question_id", "category", "question", "bertscore_f1", "token_f1", "string_similarity", "latency_s"]],
+            use_container_width=True
+        )
+
+        # Allow detailed question inspection
+        selected_q_id = st.selectbox("Select Question ID to inspect outputs:", options=res_df["question_id"].tolist())
+        if selected_q_id:
+            q_row = res_df[res_df["question_id"] == selected_q_id].iloc[0]
+            st.markdown(f"**Question ({q_row['question_id']}):** {q_row['question']}")
+            
+            c_g, c_r = st.columns(2)
+            with c_g:
+                st.markdown("##### 📋 Gold Reference Answer")
+                st.markdown(f'<div class="gold-response">{q_row["gold_answer"]}</div>', unsafe_allow_html=True)
+            with c_r:
+                st.markdown("##### ✅ RAG Generated Answer")
+                st.markdown(f'<div class="rag-response">{q_row["rag_answer"]}</div>', unsafe_allow_html=True)
+
+        # Download CSV option
+        csv_bytes = res_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Benchmark Results (CSV)",
+            data=csv_bytes,
+            file_name=f"medical_rag_benchmark_50_results_{selected_model.replace(':', '_')}.csv",
+            mime="text/csv"
+        )
 
 # --- TAB 3: Consistency & Reproducibility Evaluator ---
 with tab_consistency:
