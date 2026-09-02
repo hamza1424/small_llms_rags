@@ -86,7 +86,7 @@ flowchart TD
 ├── rag/                        # Core RAG Library Modules
 │   ├── __init__.py
 │   ├── rag_pipeline.py         # Main orchestrator class (MedicalRAGPipeline)
-│   ├── document_loader.py      # PDF loader, paragraph chunker & scraper ingestor
+│   ├── document_loader.py      # CSV & scraped KB document chunker & loader
 │   ├── embedder.py             # MedicalEmbedder wrapper for Sentence-Transformers
 │   ├── vector_store.py         # MedicalVectorStore wrapper for ChromaDB
 │   ├── retriever.py            # MedicalRetriever vector search handler
@@ -102,10 +102,6 @@ flowchart TD
 │   ├── benchmark_50_fixed.csv  # Fixed 50-question benchmark evaluation set
 │   └── scraped_kb/             # Local markdown storage for scraped PubMed & Wiki articles
 ├── benchmark_results/          # Auto-saved CSV evaluation benchmark runs
-├── methodology_report.md       # Research methodology report documentation
-├── streamlit_functionality.md  # Detailed Streamlit app functionality documentation
-├── tools_and_technologies.md   # Architectural technology stack specification
-├── dissertation_objectives.txt # Formal research objectives reference
 └── test_rag.py                 # RAG pipeline unit test verification script
 ```
 
