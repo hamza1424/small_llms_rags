@@ -1,6 +1,6 @@
 # RAG Configuration
 knowledge_base:
-  folder: "dataset"
+  folder: "data/scraped_kb"
   chunking_strategy: "paragraph"
   chunk_size: 500
   chunk_overlap: 50

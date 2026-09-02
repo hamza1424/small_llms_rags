@@ -17,16 +17,15 @@ def run_tests():
         sys.exit(1)
 
     # 2. Test Document Loading and Ingestion
-    print("\n--- Step 2: Testing Document Ingestion ---")
+    print("\n--- Step 2: Testing Document Ingestion (Scraped KB) ---")
     try:
-        # Check if dataset exists
-        dataset_folder = pipeline.config['knowledge_base']['folder']
-        if not os.path.exists(dataset_folder):
-            print(f"FAIL: Dataset folder '{dataset_folder}' does not exist.")
+        kb_folder = pipeline.config['knowledge_base']['folder']
+        if not os.path.exists(kb_folder):
+            print(f"FAIL: Knowledge base folder '{kb_folder}' does not exist.")
             sys.exit(1)
             
-        print("Ingesting files...")
-        added_count = pipeline.ingest_documents()
+        print(f"Ingesting scraped KB from {kb_folder}...")
+        added_count = pipeline.ingest_scraped_kb(kb_folder=kb_folder, focus_area="Diabetes", clear_existing=True)
         print(f"Success: Ingested {added_count} chunks.")
         assert added_count > 0, "Ingested chunk count must be greater than 0."
     except Exception as e:

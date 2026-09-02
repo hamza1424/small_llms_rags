@@ -1,33 +1,37 @@
-# Environment and Secrets
+# Environment variables and API keys
 .env
 *.env
-*.pem
-*.key
 
-# Datasets and Data files
-data/
-dataset/
-*.csv
-*.pdf
-*.xlsx
-*.parquet
+# Python Virtual Environments
+.venv/
+venv/
+env/
 
-# Vector Database and Storage
+# Vector Databases and Local Storage
 chroma_db/
-*.sqlite3
-*.db
 
-# Python Caches & Environments
+# Unused & Archive Directory
+unused_and_archive/
+
+# Python cache & build outputs
 __pycache__/
 *.py[cod]
 *$py.class
-.venv/
-venv/
-ENV/
-env/
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
 
-# IDE & OS files
+# Logs and databases
+*.log
+*.sqlite3
+
+# IDE and OS settings
 .DS_Store
-.vscode/
 .idea/
-*.swp
+.vscode/
+.antigravity/
+.gemini/

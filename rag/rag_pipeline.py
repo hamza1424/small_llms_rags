@@ -102,28 +102,59 @@ class MedicalRAGPipeline:
         added_count = self.vector_store.add_chunks(chunks, clear_existing=clear_existing)
         return added_count
 
+    def ingest_scraped_kb(
+        self,
+        kb_folder: str = "data/scraped_kb",
+        focus_area: str | None = None,
+        source_type: str = "all",
+        clear_existing: bool = True,
+    ) -> int:
+        """
+        Load scraped PubMed abstracts and Wikipedia articles, chunk them, and index into ChromaDB.
+        """
+        from rag.document_loader import load_and_chunk_scraped_kb
+
+        print(f"Starting Scraped KB ingestion from folder: {kb_folder}")
+        chunk_size = self.config['knowledge_base'].get('chunk_size', 600)
+        chunk_overlap = self.config['knowledge_base'].get('chunk_overlap', 50)
+
+        chunks = load_and_chunk_scraped_kb(
+            kb_folder=kb_folder,
+            focus_area=focus_area,
+            source_type=source_type,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+
+        if not chunks:
+            print("No scraped KB document chunks loaded.")
+            return 0
+
+        added_count = self.vector_store.add_chunks(chunks, clear_existing=clear_existing)
+        return added_count
+
 
     def build_rag_prompt(self, question: str, retrieved_chunks: List[Dict[str, Any]]) -> str:
         """
         Build an enriched clinical prompt with retrieved context.
+        Tuned for gold templates: what is / risk / symptoms / treatments / prevent / diagnose.
         """
         contexts = [item['text'] for item in retrieved_chunks]
-        context_str = "\n\n".join(contexts)
-        
-        prompt = f"""
-        You are a medical expert with the task of answering medical questions. 
-        Given the following context, answer the question.
-        Don't mention in your answer that you're using the context.
-        Keep the ansswer in terms of guidance for users to understand in simple plain language. 
+        context_str = "\n\n".join(
+            f"[Source {i}]\n{text}" for i, text in enumerate(contexts, 1)
+        )
 
-        Context:
-        {context_str}
+        prompt = f"""You are a clinical educator writing answers in the style of NIH / MedlinePlus patient education pages.
+            Don't mention aboutt the context in yuor answer. 
+            Answer in plain simple language. 
+            Avoid heading and bullet points.
+CONTEXT:
+{context_str}
 
-        Question:
-        {question}
+QUESTION:
+{question}
 
-        Answer:
-        """
+ANSWER:"""
         return prompt
 
     SHARED_SYSTEM_INSTRUCTION = (

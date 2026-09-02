@@ -243,3 +243,100 @@ def load_and_chunk_csv(
 
     print(f"Loaded {len(documents)} CSV answer chunks from {path.name}.")
     return documents
+
+
+def load_and_chunk_scraped_kb(
+    kb_folder: str = "data/scraped_kb",
+    focus_area: str | None = None,
+    source_type: str = "all",
+    chunk_size: int = 600,
+    chunk_overlap: int = 50,
+) -> List:
+    """
+    Load external scraped PubMed abstracts and Wikipedia articles,
+    chunk Wikipedia long texts into paragraphs, and format into Document objects.
+    """
+    import json
+    from pathlib import Path
+    from langchain_core.documents import Document
+
+    path = Path(kb_folder)
+    if not path.exists():
+        raise FileNotFoundError(f"Scraped KB folder not found: {kb_folder}")
+
+    wiki_path = path / "wikipedia_articles.json"
+    pubmed_path = path / "pubmed_abstracts.json"
+
+    documents = []
+
+    # 1. Load Wikipedia Articles
+    if source_type.lower() in ["all", "wikipedia"] and wiki_path.exists():
+        with open(wiki_path, "r", encoding="utf-8") as f:
+            wiki_data = json.load(f)
+
+        for item in wiki_data:
+            cat = item.get("focus_area", "")
+            if focus_area and focus_area.lower() != "all" and cat.lower() != focus_area.lower():
+                continue
+
+            full_text = item.get("full_text", "").strip()
+            title = item.get("title", "Wikipedia Article")
+            url = item.get("url", "")
+
+            if full_text:
+                raw_doc = Document(
+                    page_content=full_text,
+                    metadata={
+                        "source": f"Wikipedia ({title})",
+                        "title": title,
+                        "focus_area": cat,
+                        "url": url,
+                        "type": "Wikipedia"
+                    }
+                )
+                # Split large Wikipedia articles into adaptive paragraph chunks
+                para_chunks = split_documents_by_paragraphs(
+                    [raw_doc],
+                    min_chunk_size=150,
+                    max_chunk_size=1000,
+                    target_chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                )
+                documents.extend(para_chunks)
+
+    # 2. Load PubMed Abstracts
+    if source_type.lower() in ["all", "pubmed"] and pubmed_path.exists():
+        with open(pubmed_path, "r", encoding="utf-8") as f:
+            pubmed_data = json.load(f)
+
+        for item in pubmed_data:
+            cat = item.get("focus_area", "")
+            if focus_area and focus_area.lower() != "all" and cat.lower() != focus_area.lower():
+                continue
+
+            title = item.get("title", "")
+            abstract = item.get("abstract", "").strip()
+            pmid = item.get("pmid", "")
+            journal = item.get("journal", "")
+            year = item.get("year", "")
+            url = item.get("url", "")
+
+            if title and abstract:
+                content = f"Title: {title}\nJournal: {journal} ({year})\nAbstract:\n{abstract}"
+                doc = Document(
+                    page_content=content,
+                    metadata={
+                        "source": f"PubMed (PMID:{pmid})",
+                        "title": title,
+                        "focus_area": cat,
+                        "pmid": pmid,
+                        "journal": journal,
+                        "year": year,
+                        "url": url,
+                        "type": "PubMed Abstract"
+                    }
+                )
+                documents.append(doc)
+
+    print(f"Loaded {len(documents)} external KB document chunks from {kb_folder}.")
+    return documents
