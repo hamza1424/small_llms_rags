@@ -109,6 +109,15 @@ flowchart TD
 
 ## ⚡ Quick Start & Installation Guide
 
+### 💻 Hardware Requirements
+
+| Component | Minimum Requirement | Recommended | Note |
+| :--- | :--- | :--- | :--- |
+| **GPU VRAM** | **6 GB** | 8 GB+ VRAM | Required for smooth local LLM inference (4B/8B models via Ollama) and BERTScore evaluation |
+| **System RAM (CPU)** | **16 GB** | 32 GB | Needed for handling ChromaDB vector indexing, PyTorch models, and benchmark evaluation |
+| **Storage** | **15 GB free space** | 30 GB+ SSD | Required for local Ollama model weights (`llama3.1:8b`, `medgemma1.5:4b`, etc.), HuggingFace cache, and vector store |
+| **Processor (CPU)** | 4-Core CPU | 8-Core CPU | For rapid web scraping, chunk processing, and embedding pipeline operations |
+
 ### Prerequisites
 
 - **Python 3.10 or higher**
